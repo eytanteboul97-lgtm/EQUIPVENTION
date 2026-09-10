@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Screen-to-screen transition for the step-by-step simulator — kept short
+   on purpose (section 17 of the UX brief: no long or "childish" motion). */
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-screen-in {
+  animation: screen-in 220ms ease-out both;
+}
+
+@keyframes check-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-check-in {
+  animation: check-in 200ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

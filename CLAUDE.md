@@ -44,6 +44,21 @@ double-price product pages, and a client-side eligibility simulator with
 lead capture (no real submission endpoint yet — see
 `components/simulator.tsx`).
 
+## The simulator is a one-question-per-screen tunnel
+
+`components/simulator.tsx` is deliberately not a form. It's a click-driven
+wizard (intro → effectif → équipement → budget → calculating → result →
+conversational lead capture → thanks), each screen its own component
+switch case, navigated via a `history: Screen[]` stack so "Retour" never
+loses an answer. Selecting a card auto-advances after ~220ms — there is no
+"Suivant" button on single-choice screens. Keep new screens the same
+shape: one short question, 2-6 big tappable choices, minimal copy.
+
+It intentionally always uses the **standard** rate (`calculateSubsidy(amountHT)`
+with no branch code) rather than exposing `BRANCH_OVERRIDES` — simpler
+tunnel, and never risks overstating the aide. If a branch-rate step is
+ever added here, it must stay one card-based screen, not a dropdown.
+
 ## Repository structure
 
 ```
