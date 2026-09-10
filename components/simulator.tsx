@@ -2,22 +2,12 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
-import {
-  ChevronLeft,
-  Check,
-  CheckCircle2,
-  PartyPopper,
-  Sparkles,
-  Armchair,
-  Weight,
-  FlaskConical,
-  HardHat,
-  AlertTriangle,
-  type LucideIcon,
-} from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ChevronLeft, Check, CheckCircle2, PartyPopper, Sparkles, type LucideIcon } from "lucide-react";
 import { calculateSubsidy } from "@/lib/subventions";
 import { formatEUR } from "@/lib/utils";
 import { RISK_CATEGORIES, type RiskCategory } from "@/lib/products";
+import { CATEGORY_ICONS } from "@/components/category-icons";
 
 /**
  * Simulateur en tunnel "un écran = une question", pensé pour être terminé
@@ -52,14 +42,6 @@ const EFFECTIF_OPTIONS = [
   { value: "200+", label: "200 salariés et plus" },
 ];
 
-const EQUIPMENT_ICONS: Record<RiskCategory, LucideIcon> = {
-  "tms-ergonomie": Armchair,
-  manutention: Weight,
-  chutes: AlertTriangle,
-  chimique: FlaskConical,
-  epi: HardHat,
-};
-
 const BUDGET_PRESETS = [500, 750, 1000, 1500, 2000];
 
 function trackEvent(name: string, data: Record<string, string | number>) {
@@ -72,14 +54,16 @@ function trackEvent(name: string, data: Record<string, string | number>) {
 
 function ProgressHeader({
   screen,
+  questionOrder,
   onBack,
   canGoBack,
 }: {
   screen: Screen;
+  questionOrder: Screen[];
   onBack: () => void;
   canGoBack: boolean;
 }) {
-  const stepIndex = QUESTION_SCREENS.indexOf(screen);
+  const stepIndex = questionOrder.indexOf(screen);
   const isQuestion = stepIndex !== -1;
 
   return (
@@ -93,13 +77,13 @@ function ProgressHeader({
           <ChevronLeft className="h-3.5 w-3.5" /> Retour
         </button>
       )}
-      {isQuestion && (
+      {isQuestion && questionOrder.length > 1 && (
         <div className="ml-auto flex items-center gap-2">
-          {stepIndex === QUESTION_SCREENS.length - 2 && (
+          {stepIndex === questionOrder.length - 2 && (
             <span className="font-mono text-xs text-green">Encore une question 👌</span>
           )}
           <div className="flex items-center gap-1.5">
-            {QUESTION_SCREENS.map((_, i) => (
+            {questionOrder.map((_, i) => (
               <span
                 key={i}
                 className={
@@ -156,12 +140,22 @@ function ChoiceCard({
 }
 
 export function Simulator() {
-  const [history, setHistory] = useState<Screen[]>(["intro"]);
+  const searchParams = useSearchParams();
+  const prefillAmount = Number(searchParams.get("montant")) || undefined;
+  const prefillCategorie = searchParams.get("categorie") as RiskCategory | null;
+  const prefillProduit = searchParams.get("produit");
+  const isPrefilled = Boolean(
+    prefillAmount && prefillCategorie && RISK_CATEGORIES.some((c) => c.id === prefillCategorie)
+  );
+
+  const [history, setHistory] = useState<Screen[]>(isPrefilled ? ["effectif"] : ["intro"]);
   const screen = history[history.length - 1];
 
   const [effectif, setEffectif] = useState<string>();
-  const [equipement, setEquipement] = useState<RiskCategory>();
-  const [amountHT, setAmountHT] = useState(1000);
+  const [equipement, setEquipement] = useState<RiskCategory | undefined>(
+    isPrefilled ? (prefillCategorie as RiskCategory) : undefined
+  );
+  const [amountHT, setAmountHT] = useState(isPrefilled ? (prefillAmount as number) : 1000);
   const [prenom, setPrenom] = useState("");
   const [entreprise, setEntreprise] = useState("");
   const [telephone, setTelephone] = useState("");
@@ -204,9 +198,16 @@ export function Simulator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
 
+  const questionOrder = isPrefilled ? ["effectif" as Screen] : QUESTION_SCREENS;
+
   return (
     <div className="mx-auto flex min-h-[560px] max-w-xl flex-col justify-center">
-      <ProgressHeader screen={screen} onBack={goBack} canGoBack={history.length > 1 && screen !== "thanks"} />
+      <ProgressHeader
+        screen={screen}
+        questionOrder={questionOrder}
+        onBack={goBack}
+        canGoBack={history.length > 1 && screen !== "thanks"}
+      />
 
       <div key={screen} className="animate-screen-in">
         {screen === "intro" && (
@@ -236,6 +237,11 @@ export function Simulator() {
 
         {screen === "effectif" && (
           <div>
+            {isPrefilled && (
+              <p className="mb-3 text-center font-mono text-xs text-ink-faint">
+                Pour {prefillProduit ?? "votre produit"} — {formatEUR(amountHT)} HT
+              </p>
+            )}
             <h2 className="text-balance text-center font-display text-2xl font-bold text-ink sm:text-3xl">
               Quel est votre effectif&nbsp;?
             </h2>
@@ -245,7 +251,9 @@ export function Simulator() {
                   key={opt.value}
                   title={opt.label}
                   selected={effectif === opt.value}
-                  onClick={() => selectAndAdvance(setEffectif, opt.value, "equipement")}
+                  onClick={() =>
+                    selectAndAdvance(setEffectif, opt.value, isPrefilled ? "calculating" : "equipement")
+                  }
                 />
               ))}
             </div>
@@ -261,7 +269,7 @@ export function Simulator() {
               {RISK_CATEGORIES.map((cat) => (
                 <ChoiceCard
                   key={cat.id}
-                  icon={EQUIPMENT_ICONS[cat.id]}
+                  icon={CATEGORY_ICONS[cat.id]}
                   title={cat.label}
                   description={cat.description}
                   selected={equipement === cat.id}

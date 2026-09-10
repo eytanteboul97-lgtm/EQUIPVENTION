@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Simulator } from "@/components/simulator";
@@ -13,7 +14,9 @@ export default function SimulateurPage() {
     <>
       <Navbar />
       <main className="mx-auto max-w-5xl px-5 py-12 sm:py-16">
-        <Simulator />
+        <Suspense fallback={null}>
+          <Simulator />
+        </Suspense>
       </main>
       <Footer />
     </>

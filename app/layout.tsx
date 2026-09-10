@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, Public_Sans, IBM_Plex_Mono } from "next/font/google";
+import { CartProvider } from "@/lib/cart-context";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -21,15 +22,17 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EQUIPVENTION — L'équipement professionnel autrement",
+  title: "EQUIPVENTION — Équipements professionnels, aide potentielle incluse",
   description:
-    "Équipements professionnels pouvant bénéficier des dispositifs de prévention des risques professionnels. Vérifiez votre éligibilité en 30 secondes.",
+    "Boutique B2B d'équipements professionnels éligibles aux dispositifs de prévention des risques. Prix, aide potentielle et reste à charge estimé sur chaque produit.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" className={`${archivo.variable} ${publicSans.variable} ${plexMono.variable}`}>
-      <body className="bg-paper font-body text-ink antialiased">{children}</body>
+      <body className="bg-paper font-body text-ink antialiased">
+        <CartProvider>{children}</CartProvider>
+      </body>
     </html>
   );
 }

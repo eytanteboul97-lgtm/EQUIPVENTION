@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { ProductIcon } from "@/components/product-icon";
-import { SubsidyCard } from "@/components/subsidy-card";
-import { LinkButton } from "@/components/ui/button";
-import { EXAMPLE_PRODUCTS, getProductBySlug, RISK_CATEGORIES } from "@/lib/products";
+import { ProductPrice } from "@/components/product-price";
+import { MiniSimulator } from "@/components/mini-simulator";
+import { AddToCartButton } from "@/components/add-to-cart-button";
+import { QuoteCTA } from "@/components/quote-cta";
+import { StickyMobileCta } from "@/components/sticky-mobile-cta";
+import { ProductCard } from "@/components/product-card";
+import { EXAMPLE_PRODUCTS, getProductBySlug, getRelatedProducts, RISK_CATEGORIES } from "@/lib/products";
 
 export function generateStaticParams() {
   return EXAMPLE_PRODUCTS.map((p) => ({ slug: p.slug }));
@@ -25,11 +30,12 @@ export default function ProductPage({ params }: { params: { slug: string } }) {
   if (!product) notFound();
 
   const category = RISK_CATEGORIES.find((c) => c.id === product.category);
+  const related = getRelatedProducts(product);
 
   return (
     <>
       <Navbar />
-      <main className="mx-auto max-w-5xl px-5 py-16">
+      <main className="mx-auto max-w-5xl px-5 py-16 pb-28 md:pb-16">
         <span className="rounded-full bg-navy-soft px-3 py-1 font-mono text-xs uppercase tracking-wide text-navy">
           Exemple — sourcing en cours
         </span>
@@ -48,14 +54,42 @@ export default function ProductPage({ params }: { params: { slug: string } }) {
             </h1>
             <p className="mt-3 text-ink-soft">{product.blurb}</p>
 
+            <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs text-ink-faint">
+              <div><dt className="inline text-ink-soft">Disponibilité — </dt><dd className="inline">{product.availability}</dd></div>
+              <div><dt className="inline text-ink-soft">Livraison estimée — </dt><dd className="inline">{product.deliveryEstimate}</dd></div>
+            </dl>
+
             <div className="mt-6">
-              <SubsidyCard amountHT={product.priceHT} compact />
+              <ProductPrice amountHT={product.priceHT} />
             </div>
 
-            <LinkButton href="/simulateur" className="mt-4 w-full justify-center" size="lg">
-              Vérifier mon éligibilité
-            </LinkButton>
+            <div className="mt-4 hidden flex-col gap-3 md:flex">
+              {product.sellMode === "panier" ? (
+                <AddToCartButton slug={product.slug} className="w-full" />
+              ) : (
+                <QuoteCTA productName={product.name} className="w-full">
+                  Demander un devis
+                </QuoteCTA>
+              )}
+              <Link
+                href={`/simulateur?montant=${product.priceHT}&categorie=${product.category}&produit=${encodeURIComponent(product.name)}`}
+                className="rounded-full border border-line py-3.5 text-center font-display font-semibold text-ink hover:border-navy/40"
+              >
+                Calculer mon reste à charge
+              </Link>
+            </div>
+
+            <p className="mt-4 text-sm text-ink-faint">
+              Une question ?{" "}
+              <QuoteCTA productName={product.name} variant="link" className="font-normal">
+                Parlez à un conseiller
+              </QuoteCTA>
+            </p>
           </div>
+        </div>
+
+        <div className="mt-10">
+          <MiniSimulator amountHT={product.priceHT} />
         </div>
 
         <div className="mt-16 grid gap-10 border-t border-line pt-12 md:grid-cols-3">
@@ -90,7 +124,21 @@ export default function ProductPage({ params }: { params: { slug: string } }) {
             </p>
           </div>
         </div>
+
+        {related.length > 0 && (
+          <div className="mt-16 border-t border-line pt-12">
+            <h2 className="font-display text-xl font-bold text-ink">
+              Vous pourriez aussi avoir besoin de
+            </h2>
+            <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {related.map((p) => (
+                <ProductCard key={p.slug} product={p} />
+              ))}
+            </div>
+          </div>
+        )}
       </main>
+      <StickyMobileCta product={product} />
       <Footer />
     </>
   );

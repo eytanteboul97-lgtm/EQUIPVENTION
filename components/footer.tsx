@@ -20,7 +20,9 @@ export function Footer() {
               <div className="font-display font-semibold text-ink">Navigation</div>
               <ul className="mt-3 space-y-2 text-ink-soft">
                 <li><Link href="/catalogue" className="hover:text-navy">Catalogue</Link></li>
+                <li><Link href="/aides" className="hover:text-navy">Aides</Link></li>
                 <li><Link href="/simulateur" className="hover:text-navy">Simulateur</Link></li>
+                <li><Link href="/panier" className="hover:text-navy">Panier</Link></li>
               </ul>
             </div>
             <div>

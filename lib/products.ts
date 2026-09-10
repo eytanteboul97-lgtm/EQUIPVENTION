@@ -52,6 +52,14 @@ export interface Product {
   professions: string[];
   features: string[];
   icon: "weight" | "armchair" | "grinder" | "cart" | "tire" | "toolkit";
+  /** "panier" pour une commande directe, "devis" pour les montants/besoins spécifiques. */
+  sellMode: "panier" | "devis";
+  availability: string;
+  deliveryEstimate: string;
+  /** Met le produit en avant sur la homepage ("les plus demandés"). */
+  popular?: boolean;
+  /** Slugs d'autres produits à suggérer en cross-sell. */
+  crossSell?: string[];
 }
 
 export const EXAMPLE_PRODUCTS: Product[] = [
@@ -65,6 +73,11 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Garage", "Concession auto", "Atelier poids lourd"],
     features: ["Capacité 200 kg", "Roulettes pivotantes", "Poignée de manœuvre ergonomique"],
     icon: "weight",
+    sellMode: "panier",
+    availability: "En stock chez notre fournisseur partenaire",
+    deliveryEstimate: "5 à 8 jours ouvrés",
+    popular: true,
+    crossSell: ["demonte-pneu-atelier", "chariot-picking-niveau-constant"],
   },
   {
     slug: "siege-suspension-poste-fixe",
@@ -76,6 +89,10 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Industrie", "Logistique", "Atelier"],
     features: ["Suspension pneumatique réglable", "Assise ajustable en hauteur", "Dossier lombaire renforcé"],
     icon: "armchair",
+    sellMode: "panier",
+    availability: "En stock chez notre fournisseur partenaire",
+    deliveryEstimate: "3 à 6 jours ouvrés",
+    crossSell: ["kit-outils-portatifs-anti-vibration", "meuleuse-portative-anti-vibration"],
   },
   {
     slug: "meuleuse-portative-anti-vibration",
@@ -86,6 +103,10 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Métallerie", "BTP", "Chaudronnerie"],
     features: ["Poignée amortissante", "Niveau vibratoire réduit", "Compatible disques standards"],
     icon: "grinder",
+    sellMode: "panier",
+    availability: "En stock chez notre fournisseur partenaire",
+    deliveryEstimate: "3 à 6 jours ouvrés",
+    crossSell: ["kit-outils-portatifs-anti-vibration", "siege-suspension-poste-fixe"],
   },
   {
     slug: "kit-outils-portatifs-anti-vibration",
@@ -97,6 +118,11 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["BTP", "Industrie", "Menuiserie"],
     features: ["3 outils inclus", "Poignées anti-vibration", "Coffret de rangement"],
     icon: "toolkit",
+    sellMode: "panier",
+    availability: "En stock chez notre fournisseur partenaire",
+    deliveryEstimate: "5 à 8 jours ouvrés",
+    popular: true,
+    crossSell: ["meuleuse-portative-anti-vibration", "siege-suspension-poste-fixe"],
   },
   {
     slug: "chariot-picking-niveau-constant",
@@ -108,6 +134,10 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Logistique", "Entrepôt", "Préparation de commandes"],
     features: ["Mise à niveau automatique", "Capacité 300 kg", "Roues increvables"],
     icon: "cart",
+    sellMode: "panier",
+    availability: "Sur commande auprès de notre fournisseur",
+    deliveryEstimate: "2 à 3 semaines",
+    crossSell: ["leve-roue-atelier", "demonte-pneu-atelier"],
   },
   {
     slug: "demonte-pneu-atelier",
@@ -119,6 +149,11 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Garage", "Pneumaticien"],
     features: ["Bras de pression assisté", "Compatible jusqu'à 21 pouces", "Palette de dégagement talon"],
     icon: "tire",
+    sellMode: "devis",
+    availability: "Sur commande auprès de notre fournisseur",
+    deliveryEstimate: "2 à 4 semaines",
+    popular: true,
+    crossSell: ["leve-roue-atelier", "chariot-picking-niveau-constant"],
   },
 ];
 
@@ -128,4 +163,23 @@ export function getProductsByCategory(category: RiskCategory) {
 
 export function getProductBySlug(slug: string) {
   return EXAMPLE_PRODUCTS.find((p) => p.slug === slug);
+}
+
+export function getPopularProducts() {
+  return EXAMPLE_PRODUCTS.filter((p) => p.popular);
+}
+
+export function getRelatedProducts(product: Product, limit = 3) {
+  const bySlug = product.crossSell
+    ?.map((slug) => getProductBySlug(slug))
+    .filter((p): p is Product => Boolean(p));
+  if (bySlug && bySlug.length > 0) return bySlug.slice(0, limit);
+  return EXAMPLE_PRODUCTS.filter(
+    (p) => p.category === product.category && p.slug !== product.slug
+  ).slice(0, limit);
+}
+
+/** Union de toutes les professions citées au catalogue, pour le filtre "secteur". */
+export function getAllProfessions() {
+  return Array.from(new Set(EXAMPLE_PRODUCTS.flatMap((p) => p.professions))).sort();
 }

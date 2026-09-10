@@ -7,9 +7,9 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="mx-auto max-w-6xl px-5 py-16 md:py-24">
+    <section id="comment-ca-marche" className="mx-auto max-w-6xl scroll-mt-24 px-5 py-16 md:py-24">
       <span className="font-mono text-xs uppercase tracking-[0.14em] text-green">
-        Comment ça marche
+        Comment fonctionne l&apos;aide
       </span>
       <h2 className="mt-3 max-w-xl text-balance font-display text-3xl font-bold text-ink">
         Du produit au dossier, sans détour administratif
