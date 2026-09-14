@@ -9,9 +9,11 @@ export function Footer() {
           <div className="max-w-sm">
             <Logo />
             <p className="mt-3 text-sm text-ink-soft">
-              EQUIPVENTION n&apos;est pas un site officiel de la CARSAT, de
-              l&apos;Assurance Maladie ou de l&apos;État. Les dossiers de
-              subvention se déposent exclusivement via net-entreprises.fr
+              Plateforme indépendante. Nous ne sommes ni l&apos;Assurance
+              Maladie, ni une Carsat, ni un organisme public. Les simulations
+              sont indicatives et l&apos;attribution définitive d&apos;une
+              aide relève exclusivement de l&apos;organisme financeur
+              compétent. Les dossiers se déposent via net-entreprises.fr
               (entreprises) ou votre caisse régionale (indépendants).
             </p>
           </div>

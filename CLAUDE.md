@@ -6,52 +6,80 @@ Guidance for Claude Code (and other AI assistants) working in this repository.
 
 **EQUIPVENTION** is a French B2B **shop** for professional equipment
 (ergonomics/TMS, manual handling, workshop tools) that may qualify for
-CARSAT/Ameli occupational-risk-prevention subsidies. As of the V3
-repositioning, the site is e-commerce first: the homepage, catalogue and
-product pages sell equipment — the subsidy/simulator is the thing that
-makes the sale easier, not the reason the site exists.
+CARSAT/Ameli occupational-risk-prevention subsidies. The site is
+e-commerce first: the homepage, catalogue and product pages sell
+equipment — the subsidy/simulator is the thing that makes the sale
+easier, not the reason the site exists.
 
 Central message: **"Vous achetez l'équipement. Nous vous aidons à réduire
 votre reste à charge."** — never "come do a simulation." Every product
 surface (card, fiche) leads with photo/name/price, then shows aide
-potentielle and reste à charge, then the buy/devis action. The full
-step-by-step simulator (`/simulateur`) still exists and is used from
-product pages (pre-filled, not re-asked), but it's a supporting tool, not
-the front door.
+potentielle and reste à charge, then the buy/devis action.
 
-Full functional spec: see the "Cahier des charges EQUIPVENTION — V2"
-document (Claude artifact, shared with the project owner) for the subsidy
-mechanics; the V3 repositioning brief covers the shop-first layout. Key
-numbers enforced in code:
+**EQUIPVENTION is not, and must never look like, an official body.**
+Every page that talks about the subsidy carries some form of: *"Plateforme
+indépendante. Nous ne sommes ni l'Assurance Maladie, ni une Carsat, ni un
+organisme public. Les simulations sont indicatives..."* (see
+`components/footer.tsx`, the simulator result screen, `/aides`). Never
+soften or drop this.
 
-- Standard rate **70%**, minimum subsidy **500€**, investment threshold
-  **≈715€ HT** (`lib/subventions.ts`).
-- **25 000€** = cap on "actions de prévention" (diagnostic + training +
-  equipment), 2024–2027 — this is what actually limits equipment purchases.
-- **75 000€** = the *global* cap across all investment types for
-  companies <200 employees. Never present this as an equipment budget.
-- Some extended branch agreements raise the rate to **85%** with higher
-  caps for some <200-employee companies — modeled as `BRANCH_OVERRIDES`
-  in `lib/subventions.ts`, never hardcoded elsewhere.
+## The regulatory data model — read before touching any number
 
-**All of the above must be reverified against ameli.fr before each
-production deploy** — these amounts change without notice.
+All subsidy rules live in `lib/aid-programs/`, structured so a second
+dispositif can be added later without touching the calculation engine:
 
-## Current phase — read before touching the catalogue
+- `lib/aid-programs/types.ts` — the shape (`AidProgram`,
+  `EligibilityRule`, `FundingRate`, `InvestmentCap`, `BranchAgreement`,
+  `RequiredDocument`, `OfficialEquipment`, `OfficialSource`, ...).
+- `lib/aid-programs/fipu.ts` — the one program implemented today
+  ("Subvention Prévention des risques ergonomiques" / FIPU). **Every
+  field carries a `source: OfficialSource` (url + organism +
+  `lastCheckedAt`) and, on the pieces that most need scrutiny
+  (equipment, documents, branch agreements), a `verified: boolean`.**
+  `verified: false` means "structurally present, not confirmed against
+  the live source" — never surface it to a user as settled fact without
+  checking first.
+- `lib/subventions.ts` — thin compatibility layer. It re-exports the
+  same constants/functions the rest of the app already imports
+  (`RATE_STANDARD`, `THRESHOLD_HT`, `calculateSubsidy`, ...), but every
+  value is *derived from* `fipu.ts`, not hardcoded. If Ameli changes a
+  number, it changes in exactly one place: `lib/aid-programs/fipu.ts`.
 
-Per the cahier des charges, the product catalogue is **deliberately not
-final**. `lib/products.ts` holds placeholder/example products only, used
-to build and test the UI. Every product card/fiche carries an "Exemple —
-sourcing en cours" badge. Do not present any of them as real inventory,
-and do not add real products until they've been scored and checked
-against the official Ameli technical spec sheet product by product.
+**What's actually verified** (relu texte à texte le 14/09/2026, source :
+la page "équipements" citée dans `fipu.ts`):
+- Taux standard **70%**, subvention minimum **500€**, seuil d'investissement
+  **715€ HT** (valeur officielle exacte, pas une approximation).
+- Plafond "actions de prévention" (diagnostic + formation + équipements) :
+  **25 000€**, 2024–2027, quelle que soit la taille de l'entreprise.
+- Plafond global tous investissements : **75 000€** pour les entreprises
+  **<200 salariés**, mais seulement **25 000€** (= même valeur que le
+  plafond par type) pour les entreprises **≥200 salariés** — pas de marge
+  supplémentaire pour elles. Ne jamais présenter le 75k comme un budget
+  équipement.
+- La **liste complète des 29 équipements officiellement reconnus**, en 5
+  groupes (transfert, roulants, plans de travail, outils/vibrations,
+  spécifiques) — voir `EQUIPMENT` dans `fipu.ts`.
+- Les documents justifiant l'investissement (facture acquittée avec son
+  contenu détaillé, attestation fournisseur, attestation de service fait).
+- Le mode de dépôt (net-entreprises.fr pour les entreprises, e-mail à la
+  caisse régionale pour les indépendants), la limite de 3 Mo par pièce
+  jointe, et la règle de traitement par ordre chronologique (vraie
+  urgence, sourcée — pas un dark pattern, à garder dans l'UI).
+- Condition 2026 : l'investissement doit être réalisé en 2026 pour une
+  demande 2026.
 
-There is still **no backend**: `lib/cart-context.tsx` is a client-only
-cart (React context + localStorage), and `QuoteCTA` (`components/quote-cta.tsx`)
-is a form that shows a local confirmation state — neither calls a real
-API. Don't imply otherwise in copy (no fake "email sent" wording beyond
-what's true). When a real backend arrives, it plugs in at exactly these
-two seams plus the lead-capture submit in `simulator.tsx`.
+**Ce qui reste `verified: false`** (repris de sessions antérieures, pas
+recontrôlé sur la page équipements — probablement derrière des onglets
+que le copier-coller n'a pas capturés) : le nom exact des 3 branches
+bénéficiant du taux majoré à 85%, et une partie des documents
+*administratifs* (attestation de vigilance URSSAF, RIB, Annexe 2 de
+minimis). Ne jamais retirer leur badge "à confirmer" sans une relecture
+de la source.
+
+**No live internet access in this dev sandbox** — outbound HTTPS to
+ameli.fr and basically everything else is blocked by network policy here.
+Regulatory content can only be verified by asking the user to paste the
+official page's text; don't attempt to fetch it.
 
 ## Money/price components — always compose from these, never re-derive
 
@@ -67,6 +95,13 @@ two seams plus the lead-capture submit in `simulator.tsx`.
   potentielle → RemainingCost) used on cards and product pages.
 - `components/mini-simulator.tsx` — inline, no-navigation effectif picker
   embedded on the product page (price is already known).
+- `components/equipment-badges.tsx` — the two-tier honesty badge on every
+  product: "Catégorie reconnue" (real fact, only when every
+  `officialEquipmentIds` entry is `verified: true`) is never merged with
+  "Référence exemple — éligibilité à vérifier" (always shown — the exact
+  commercial SKU isn't validated). Never collapse these into one
+  "Compatible avec les critères techniques" claim; that stronger wording
+  is reserved for the day a real per-SKU technical check exists.
 
 If a new surface needs to show a price/aide/reste-à-charge, reuse one of
 these — never write a new `amountHT * 0.7` somewhere.
@@ -74,19 +109,41 @@ these — never write a new `amountHT * 0.7` somewhere.
 ## The simulator is a one-question-per-screen tunnel
 
 `components/simulator.tsx` is deliberately not a form. It's a click-driven
-wizard (intro → effectif → équipement → budget → calculating → result →
-conversational lead capture → thanks), navigated via a `history: Screen[]`
-stack so "Retour" never loses an answer. Selecting a card auto-advances
-after ~220ms.
+wizard, navigated via a `history: Screen[]` stack so "Retour" never loses
+an answer. Selecting a card auto-advances after ~220ms. Full path:
+`intro → effectif → secteur → besoin → équipement → budget → conditions
+→ calculating → result → lead (prénom/nom/entreprise/téléphone/code
+postal/email) → thanks`.
+
+- **secteur** (10 cards) and **besoin** (8 cards) are collected for
+  personalization and lead qualification. Per the verified rules, neither
+  gates eligibility today (FIPU has no sector exclusion) — don't invent
+  one. `besoin` *does* drive which official equipment groups appear next
+  (`BESOIN_OPTIONS[...].groups`).
+- **équipement** shows the real `OFFICIAL_EQUIPMENT_GROUPS` (from
+  `lib/aid-programs/types.ts`), filtered by the chosen `besoin` — not the
+  catalogue's own `RiskCategory` taxonomy, which is a separate, deliberate
+  UX simplification used only for browsing (`/catalogue`,
+  `product.category`). Don't conflate the two.
+- **conditions**: a single simplified screen for the two conditions we
+  can actually state with a straight face (équipement neuf, achat en
+  2026). Answering "oui" to both is what makes the result 🟢 instead of 🟠
+  — see the tier logic below.
+- **result** is a real 🟢/🟠/🔴 three-tier system, not eligible/not:
+  - 🔴 *"Non identifié"* — amount is below `THRESHOLD_HT`. Hard, sourced fact.
+  - 🟢 *"Critères identifiés comme compatibles"* — above threshold **and**
+    user confirmed both conditions.
+  - 🟠 *"Éligibilité potentielle — vérification nécessaire"* — above
+    threshold but conditions unconfirmed ("je ne sais pas").
+  Never collapse this back to a binary, and never say "vous recevrez X€" —
+  always "aide potentielle estimée".
 
 It reads `montant` / `categorie` / `produit` query params (see
-`ProductCard`'s "Calculer mon reste à charge" link and the product page's
-own link) to **pre-fill** the product's price and category — per the
-repositioning brief, a user coming from a product must never be asked to
-re-describe what they already picked. When pre-filled, the tunnel skips
-straight from "effectif" to the result. It uses `useSearchParams()`, so
-both `/simulateur` and `/catalogue` wrap their client browser/tunnel in
-`<Suspense>`.
+`ProductCard`'s "Calculer mon reste à charge" link) to **pre-fill** the
+product's price and category. When pre-filled, the tunnel skips straight
+from `effectif` to `conditions` (secteur/besoin/équipement/budget are
+already implied by the product). It uses `useSearchParams()`, so both
+`/simulateur` and `/catalogue` wrap their client component in `<Suspense>`.
 
 It intentionally always uses the **standard** rate (no branch code) —
 simpler, and never risks overstating the aide.
@@ -103,6 +160,25 @@ Portaling to `document.body` sidesteps that entirely. Any future modal
 / dropdown-that-must-cover-everything should do the same; don't
 re-introduce an inline fixed-overlay pattern.
 
+## Current phase — read before touching the catalogue
+
+The product catalogue is **deliberately not final**. `lib/products.ts`
+holds placeholder/example products only. Each one's `officialEquipmentIds`
+now points at real, verified entries in `lib/aid-programs/fipu.ts` — the
+*category* is genuinely officially recognized — but the specific
+commercial reference is still an example (see `equipment-badges.tsx`
+above). Do not add real products until they've been scored and checked
+against the official technical cahier des charges reference by reference.
+
+There is still **no backend**: `lib/cart-context.tsx` is a client-only
+cart (React context + localStorage), and `QuoteCTA` shows a local
+confirmation state — neither calls a real API. A real back-office to edit
+`aid-programs` data without a redeploy, SIRET/SIREN lookup, document
+upload, and real analytics all require a database and are a deliberate
+later phase (infra decision, not a component to add casually) — see the
+"Architecture EQUIPVENTION V4" document (Claude artifact) for the full
+phasing rationale.
+
 ## Repository structure
 
 ```
@@ -116,8 +192,9 @@ app/
   simulateur/page.tsx    Eligibility tunnel (Suspense-wrapped)
   catalogue/page.tsx     Shop catalogue: search + CatalogueBrowser (filters/sort)
   produits/[slug]/       Full commercial product page + sticky mobile CTA
-  aides/page.tsx         Explains the subsidy mechanism; never sells directly,
-                          always ends by sending traffic back to /catalogue
+  aides/page.tsx         Explains the subsidy mechanism (full equipment list,
+                          documents, deposit process, sources) — never sells
+                          directly, always ends by sending traffic to /catalogue
   panier/page.tsx        Client-side cart (no payment — B2B devis instead)
 components/
   ui/button.tsx           Shared <Button>/<LinkButton> primitives
@@ -128,15 +205,18 @@ components/
   how-it-works.tsx, trust-badges.tsx, final-cta.tsx, footer.tsx
   product-card.tsx, category-card.tsx, category-icons.tsx, product-icon.tsx
   product-price.tsx, remaining-cost.tsx, funding-badge.tsx, mini-simulator.tsx
-  add-to-cart-button.tsx, quote-cta.tsx, sticky-mobile-cta.tsx
+  equipment-badges.tsx, add-to-cart-button.tsx, quote-cta.tsx, sticky-mobile-cta.tsx
   catalogue-browser.tsx  Client component: category/secteur/price filters + sort
   search-bar.tsx          Client-side product name search + suggestions
   simulator.tsx           The eligibility tunnel (see above)
 lib/
-  subventions.ts    Single source of truth for rates/thresholds/caps
-  products.ts        Example catalogue data + helpers (byCategory, related, popular)
-  cart-context.tsx   Client-only cart (React context + localStorage)
-  utils.ts            cn() helper + formatEUR()
+  aid-programs/types.ts   The regulatory data model (see above)
+  aid-programs/fipu.ts     The one program implemented, fully sourced
+  subventions.ts           Compatibility layer over aid-programs/fipu.ts
+  products.ts               Example catalogue data + helpers (byCategory,
+                             byOfficialGroup, related, popular)
+  cart-context.tsx          Client-only cart (React context + localStorage)
+  utils.ts                   cn() helper + formatEUR()
 ```
 
 ## Conventions
@@ -158,14 +238,13 @@ lib/
   `font-mono` (IBM Plex Mono — amounts, thresholds, codes, tabular data).
 - **No fabricated trust signals**: trust badges (`trust-badges.tsx`) list
   only services actually built or genuinely promised elsewhere in the
-  site (devis rapide, accompagnement dossier, support dédié, facture
-  professionnelle, livraison). Don't add "paiement sécurisé" until a real
-  payment flow exists, and never add fabricated customer
-  testimonials/quotes/names — that's presenting invented reviews as
-  genuine.
-- **No fake urgency**: no invented stock counters or countdown timers.
+  site. Don't add "paiement sécurisé" until a real payment flow exists,
+  and never add fabricated customer testimonials/quotes/names.
+- **No fake urgency** — except the one urgency claim that's real and
+  sourced (first-come-first-served processing, see `/aides`). Don't add
+  invented stock counters or countdown timers.
 - **Official documents**: never host a copy of an Ameli PDF. Always link
-  out to the live ameli.fr page — see `components/footer.tsx`.
+  out to the live ameli.fr page.
 - **Tone**: commercial shop, never institutional. The site must never
   look like an official CARSAT/Ameli/government site.
 - **Path imports**: use the `@/` alias, configured in `tsconfig.json`.

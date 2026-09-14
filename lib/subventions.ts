@@ -1,28 +1,41 @@
 /**
  * Moteur de calcul des subventions — source unique utilisée par la homepage,
- * le simulateur, les fiches produit et (plus tard) le panier/pré-dossier.
+ * le simulateur, les fiches produit et le panier.
  *
- * Aucun taux, seuil ou plafond ne doit être recopié ailleurs dans le code.
- * Montants à revérifier sur ameli.fr avant chaque mise en production —
- * voir le cahier des charges, section "Corrections apportées en V2".
+ * Ce fichier ne contient plus les chiffres en dur : il les lit depuis
+ * lib/aid-programs/fipu.ts, qui porte pour chaque valeur sa source
+ * officielle et sa date de dernière vérification. Si une valeur doit
+ * changer (Ameli fait évoluer une règle), elle se modifie à un seul
+ * endroit : lib/aid-programs/fipu.ts.
  */
 
-export const RATE_STANDARD = 0.7;
-export const MIN_SUBSIDY = 500;
-export const THRESHOLD_HT = Math.ceil(MIN_SUBSIDY / RATE_STANDARD); // ≈ 715 € HT
+import { FIPU } from "./aid-programs/fipu";
+import type { BranchAgreement } from "./aid-programs/types";
+
+export const RATE_STANDARD = FIPU.standardRate.rate;
+export const MIN_SUBSIDY = FIPU.minimumGrant.amount;
+export const THRESHOLD_HT = FIPU.minimumExpense.amount; // 715 € HT — valeur officielle, pas une approximation
+
+const ACTIONS_PREVENTION_CAP = FIPU.investmentCaps.find((c) => c.investmentType.startsWith("Actions de prévention"));
+const GLOBAL_CAP = FIPU.investmentCaps.find((c) => c.investmentType.includes("plafond global"));
 
 /** Plafond des "actions de prévention" (diagnostic + formation + équipements), 2024-2027. */
-export const PLAFOND_ACTIONS_PREVENTION = 25_000;
+export const PLAFOND_ACTIONS_PREVENTION = ACTIONS_PREVENTION_CAP?.capByCompanySize[0]?.amount ?? 25_000;
 
 /**
  * Plafond global tous types d'investissement pour les entreprises <200 salariés.
  * Informationnel uniquement — ne jamais l'afficher comme un budget disponible
  * pour de l'achat de matériel, qui reste encadré par PLAFOND_ACTIONS_PREVENTION.
  */
-export const PLAFOND_GLOBAL_MOINS_200 = 75_000;
+export const PLAFOND_GLOBAL_MOINS_200 =
+  GLOBAL_CAP?.capByCompanySize.find((c) => c.maxEmployees === 199)?.amount ?? 75_000;
+
+/** Même plafond global, mais pour les entreprises de 200 salariés et plus (pas de marge supplémentaire). */
+export const PLAFOND_GLOBAL_200_ET_PLUS =
+  GLOBAL_CAP?.capByCompanySize.find((c) => c.maxEmployees === null)?.amount ?? 25_000;
 
 /** Plafond de cumul des aides publiques, règle de minimis (300 000 € / 3 ans glissants). */
-export const PLAFOND_DE_MINIMIS = 300_000;
+export const PLAFOND_DE_MINIMIS = FIPU.deMinimisCap.amount;
 
 export interface BranchOverride {
   code: string;
@@ -33,19 +46,18 @@ export interface BranchOverride {
   aVerifier?: boolean;
 }
 
-/**
- * Accords de branche étendus portant le taux au-delà de 70 %.
- * Exemple structurel uniquement — à remplacer par les branches réelles listées
- * par Ameli ("de nouveaux accords pour 3 branches d'activité") avant mise en prod.
- */
-export const BRANCH_OVERRIDES: BranchOverride[] = [
-  {
-    code: "exemple-branche-majoree",
-    label: "Exemple — branche avec accord étendu (à confirmer)",
-    rate: 0.85,
-    aVerifier: true,
-  },
-];
+function fromBranchAgreement(b: BranchAgreement): BranchOverride {
+  return {
+    code: b.branchCode,
+    label: b.branchName,
+    rate: b.rateOverride,
+    plafondActionsPrevention: b.capOverride,
+    aVerifier: !b.verified,
+  };
+}
+
+/** Accords de branche étendus portant le taux au-delà de 70 % — voir lib/aid-programs/fipu.ts. */
+export const BRANCH_OVERRIDES: BranchOverride[] = FIPU.branchAgreements.map(fromBranchAgreement);
 
 export interface SubsidyResult {
   amountHT: number;
@@ -66,6 +78,11 @@ export function getRateForBranch(branchCode?: string): { rate: number; plafond: 
     rate: branch?.rate ?? RATE_STANDARD,
     plafond: branch?.plafondActionsPrevention ?? PLAFOND_ACTIONS_PREVENTION,
   };
+}
+
+/** Plafond global (tous investissements confondus) applicable selon l'effectif. */
+export function getGlobalCapForCompanySize(employees: number): number {
+  return employees < 200 ? PLAFOND_GLOBAL_MOINS_200 : PLAFOND_GLOBAL_200_ET_PLUS;
 }
 
 export function calculateSubsidy(amountHT: number, branchCode?: string): SubsidyResult {

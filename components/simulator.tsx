@@ -3,11 +3,30 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ChevronLeft, Check, CheckCircle2, PartyPopper, Sparkles, type LucideIcon } from "lucide-react";
+import {
+  ChevronLeft,
+  Check,
+  CheckCircle2,
+  PartyPopper,
+  Sparkles,
+  Store,
+  UtensilsCrossed,
+  Factory,
+  HardHat,
+  HeartPulse,
+  Briefcase,
+  Truck,
+  Wheat,
+  Scissors,
+  MoreHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 import { calculateSubsidy } from "@/lib/subventions";
 import { formatEUR } from "@/lib/utils";
-import { RISK_CATEGORIES, type RiskCategory } from "@/lib/products";
-import { CATEGORY_ICONS } from "@/components/category-icons";
+import { RISK_CATEGORIES, getProductsByOfficialGroup, type RiskCategory } from "@/lib/products";
+import { OFFICIAL_GROUP_ICONS } from "@/components/category-icons";
+import { ProductCard } from "@/components/product-card";
+import { OFFICIAL_EQUIPMENT_GROUPS, type OfficialEquipmentGroup } from "@/lib/aid-programs/types";
 
 /**
  * Simulateur en tunnel "un écran = une question", pensé pour être terminé
@@ -23,17 +42,23 @@ import { CATEGORY_ICONS } from "@/components/category-icons";
 type Screen =
   | "intro"
   | "effectif"
+  | "secteur"
+  | "besoin"
   | "equipement"
   | "budget"
+  | "conditions"
   | "calculating"
   | "result"
   | "lead-prenom"
+  | "lead-nom"
   | "lead-entreprise"
   | "lead-telephone"
+  | "lead-codepostal"
   | "lead-email"
   | "thanks";
 
-const QUESTION_SCREENS: Screen[] = ["effectif", "equipement", "budget"];
+const FULL_QUESTION_ORDER: Screen[] = ["effectif", "secteur", "besoin", "equipement", "budget", "conditions"];
+const PREFILLED_QUESTION_ORDER: Screen[] = ["effectif", "conditions"];
 
 const EFFECTIF_OPTIONS = [
   { value: "1-9", label: "1 à 9 salariés" },
@@ -42,11 +67,35 @@ const EFFECTIF_OPTIONS = [
   { value: "200+", label: "200 salariés et plus" },
 ];
 
+const SECTEUR_OPTIONS: { value: string; label: string; icon: LucideIcon }[] = [
+  { value: "commerce", label: "Commerce", icon: Store },
+  { value: "hotellerie-restauration", label: "Hôtellerie / restauration", icon: UtensilsCrossed },
+  { value: "industrie", label: "Industrie", icon: Factory },
+  { value: "btp", label: "BTP", icon: HardHat },
+  { value: "sante", label: "Santé", icon: HeartPulse },
+  { value: "services", label: "Services", icon: Briefcase },
+  { value: "logistique", label: "Logistique", icon: Truck },
+  { value: "agriculture", label: "Agriculture", icon: Wheat },
+  { value: "coiffure-esthetique", label: "Coiffure / esthétique", icon: Scissors },
+  { value: "autre", label: "Autre", icon: MoreHorizontal },
+];
+
+const BESOIN_OPTIONS: { value: string; label: string; groups: OfficialEquipmentGroup[] }[] = [
+  { value: "manutention-charges", label: "Manutention de charges", groups: ["roulants"] },
+  { value: "postures", label: "Postures difficiles", groups: ["plans-de-travail"] },
+  { value: "vibrations", label: "Vibrations", groups: ["outils-vibrations"] },
+  { value: "deplacement-materiel", label: "Déplacement de matériel", groups: ["roulants", "transfert"] },
+  { value: "nettoyage", label: "Nettoyage professionnel", groups: ["specifiques"] },
+  { value: "transfert-personnes", label: "Transfert de personnes", groups: ["transfert"] },
+  { value: "organisation-poste", label: "Organisation du poste de travail", groups: ["plans-de-travail", "outils-vibrations"] },
+  { value: "autre", label: "Autre", groups: [] },
+];
+
 const BUDGET_PRESETS = [500, 750, 1000, 1500, 2000];
 
 function trackEvent(name: string, data: Record<string, string | number>) {
   // Point d'accroche pour un futur outil d'analytics — jamais de PII ici
-  // (pas de nom, email, téléphone ou SIRET).
+  // (pas de nom, email, téléphone, code postal ou SIRET).
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(`equipvention:${name}`, { detail: data }));
   }
@@ -86,10 +135,7 @@ function ProgressHeader({
             {questionOrder.map((_, i) => (
               <span
                 key={i}
-                className={
-                  "h-1.5 w-1.5 rounded-full " +
-                  (i <= stepIndex ? "bg-navy" : "bg-line")
-                }
+                className={"h-1.5 w-1.5 rounded-full " + (i <= stepIndex ? "bg-navy" : "bg-line")}
               />
             ))}
           </div>
@@ -139,6 +185,9 @@ function ChoiceCard({
   );
 }
 
+type ConditionsAnswer = "oui" | "incertain";
+type Tier = "compatible" | "potentiel" | "non-identifie";
+
 export function Simulator() {
   const searchParams = useSearchParams();
   const prefillAmount = Number(searchParams.get("montant")) || undefined;
@@ -152,13 +201,16 @@ export function Simulator() {
   const screen = history[history.length - 1];
 
   const [effectif, setEffectif] = useState<string>();
-  const [equipement, setEquipement] = useState<RiskCategory | undefined>(
-    isPrefilled ? (prefillCategorie as RiskCategory) : undefined
-  );
+  const [secteur, setSecteur] = useState<string>();
+  const [besoin, setBesoin] = useState<string>();
+  const [equipementGroup, setEquipementGroup] = useState<OfficialEquipmentGroup>();
   const [amountHT, setAmountHT] = useState(isPrefilled ? (prefillAmount as number) : 1000);
+  const [conditionsAnswer, setConditionsAnswer] = useState<ConditionsAnswer>();
   const [prenom, setPrenom] = useState("");
+  const [nom, setNom] = useState("");
   const [entreprise, setEntreprise] = useState("");
   const [telephone, setTelephone] = useState("");
+  const [codePostal, setCodePostal] = useState("");
   const [email, setEmail] = useState("");
 
   const sliderRef = useRef<HTMLInputElement>(null);
@@ -176,14 +228,20 @@ export function Simulator() {
 
   const result = useMemo(() => calculateSubsidy(amountHT), [amountHT]);
   const effectifLabel = EFFECTIF_OPTIONS.find((o) => o.value === effectif)?.label;
-  const equipementLabel = RISK_CATEGORIES.find((c) => c.id === equipement)?.label;
+  const besoinOption = BESOIN_OPTIONS.find((b) => b.value === besoin);
+  const equipementGroupLabel = OFFICIAL_EQUIPMENT_GROUPS.find((g) => g.id === equipementGroup)?.label;
+  const availableGroups = besoinOption && besoinOption.groups.length > 0
+    ? OFFICIAL_EQUIPMENT_GROUPS.filter((g) => besoinOption.groups.includes(g.id))
+    : OFFICIAL_EQUIPMENT_GROUPS;
+
+  const tier: Tier = !result.eligible ? "non-identifie" : conditionsAnswer === "oui" ? "compatible" : "potentiel";
+
+  const matchedProducts = equipementGroup ? getProductsByOfficialGroup(equipementGroup).slice(0, 3) : [];
 
   // Écran "on calcule..." : révèle 3 coches puis avance seul, 1,4s max.
   useEffect(() => {
     if (screen !== "calculating") return;
-    const timers = [
-      setTimeout(() => push("result"), 1400),
-    ];
+    const timers = [setTimeout(() => push("result"), 1400)];
     return () => timers.forEach(clearTimeout);
   }, [screen]);
 
@@ -191,14 +249,15 @@ export function Simulator() {
     if (screen === "result") {
       trackEvent("simulator_result", {
         effectif: effectif ?? "",
-        equipement: equipement ?? "",
-        eligible: String(result.eligible),
+        secteur: secteur ?? "",
+        besoin: besoin ?? "",
+        tier,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
 
-  const questionOrder = isPrefilled ? ["effectif" as Screen] : QUESTION_SCREENS;
+  const questionOrder = isPrefilled ? PREFILLED_QUESTION_ORDER : FULL_QUESTION_ORDER;
 
   return (
     <div className="mx-auto flex min-h-[560px] max-w-xl flex-col justify-center">
@@ -213,10 +272,12 @@ export function Simulator() {
         {screen === "intro" && (
           <div className="text-center">
             <h1 className="text-balance font-display text-3xl font-extrabold leading-tight text-ink sm:text-4xl">
-              Combien pourriez-vous économiser sur votre équipement&nbsp;?
+              Des équipements professionnels jusqu&apos;à 70&nbsp;% financés*
             </h1>
             <p className="mx-auto mt-4 max-w-sm text-ink-soft">
-              Répondez à quelques questions et obtenez une estimation en moins d&apos;une minute.
+              Vérifiez gratuitement en quelques minutes si votre entreprise
+              peut bénéficier d&apos;une aide pour financer certains
+              équipements de prévention.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 font-mono text-xs text-ink-soft">
               <span>✓ Gratuit</span>
@@ -227,10 +288,10 @@ export function Simulator() {
               onClick={() => push("effectif")}
               className="mt-8 w-full rounded-full bg-navy py-4 font-display font-semibold text-white hover:bg-navy-deep sm:w-auto sm:px-10"
             >
-              Calculer mon aide
+              Tester mon éligibilité
             </button>
             <p className="mt-3 font-mono text-[0.7rem] text-ink-faint">
-              Simulation indicative selon les informations renseignées.
+              Environ 2 minutes. *Simulation indicative, voir conditions.
             </p>
           </div>
         )}
@@ -243,7 +304,7 @@ export function Simulator() {
               </p>
             )}
             <h2 className="text-balance text-center font-display text-2xl font-bold text-ink sm:text-3xl">
-              Quel est votre effectif&nbsp;?
+              Combien de salariés compte votre entreprise&nbsp;?
             </h2>
             <div className="mt-6 flex flex-col gap-2.5">
               {EFFECTIF_OPTIONS.map((opt) => (
@@ -252,8 +313,45 @@ export function Simulator() {
                   title={opt.label}
                   selected={effectif === opt.value}
                   onClick={() =>
-                    selectAndAdvance(setEffectif, opt.value, isPrefilled ? "calculating" : "equipement")
+                    selectAndAdvance(setEffectif, opt.value, isPrefilled ? "conditions" : "secteur")
                   }
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {screen === "secteur" && (
+          <div>
+            <h2 className="text-balance text-center font-display text-2xl font-bold text-ink sm:text-3xl">
+              Votre secteur d&apos;activité&nbsp;?
+            </h2>
+            <div className="mt-6 grid grid-cols-2 gap-2.5">
+              {SECTEUR_OPTIONS.map((opt) => (
+                <ChoiceCard
+                  key={opt.value}
+                  icon={opt.icon}
+                  title={opt.label}
+                  selected={secteur === opt.value}
+                  onClick={() => selectAndAdvance(setSecteur, opt.value, "besoin")}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {screen === "besoin" && (
+          <div>
+            <h2 className="text-balance text-center font-display text-2xl font-bold text-ink sm:text-3xl">
+              Que souhaitez-vous améliorer&nbsp;?
+            </h2>
+            <div className="mt-5 flex flex-col gap-2">
+              {BESOIN_OPTIONS.map((opt) => (
+                <ChoiceCard
+                  key={opt.value}
+                  title={opt.label}
+                  selected={besoin === opt.value}
+                  onClick={() => selectAndAdvance(setBesoin, opt.value, "equipement")}
                 />
               ))}
             </div>
@@ -263,17 +361,19 @@ export function Simulator() {
         {screen === "equipement" && (
           <div>
             <h2 className="text-balance text-center font-display text-2xl font-bold text-ink sm:text-3xl">
-              Quel équipement vous intéresse&nbsp;?
+              Quel type d&apos;équipement recherchez-vous&nbsp;?
             </h2>
+            <p className="mt-2 text-center text-xs text-ink-faint">
+              Catégories officiellement reconnues par le dispositif, filtrées selon votre besoin.
+            </p>
             <div className="mt-5 flex flex-col gap-2">
-              {RISK_CATEGORIES.map((cat) => (
+              {availableGroups.map((g) => (
                 <ChoiceCard
-                  key={cat.id}
-                  icon={CATEGORY_ICONS[cat.id]}
-                  title={cat.label}
-                  description={cat.description}
-                  selected={equipement === cat.id}
-                  onClick={() => selectAndAdvance(setEquipement, cat.id, "budget")}
+                  key={g.id}
+                  icon={OFFICIAL_GROUP_ICONS[g.id]}
+                  title={g.label}
+                  selected={equipementGroup === g.id}
+                  onClick={() => selectAndAdvance(setEquipementGroup, g.id, "budget")}
                 />
               ))}
             </div>
@@ -324,11 +424,37 @@ export function Simulator() {
               className="mt-8 w-full accent-green"
             />
             <button
-              onClick={() => push("calculating")}
+              onClick={() => push("conditions")}
               className="mt-8 w-full rounded-full bg-navy py-4 font-display font-semibold text-white hover:bg-navy-deep"
             >
-              Voir mon estimation
+              Continuer
             </button>
+          </div>
+        )}
+
+        {screen === "conditions" && (
+          <div>
+            <h2 className="text-balance text-center font-display text-2xl font-bold text-ink sm:text-3xl">
+              Deux conditions à vérifier
+            </h2>
+            <div className="mt-5 rounded-2xl border border-line bg-paper-raised p-5 text-sm text-ink-soft">
+              <ul className="flex flex-col gap-2">
+                <li>— L&apos;équipement est neuf (jamais utilisé).</li>
+                <li>— L&apos;achat sera réalisé en 2026.</li>
+              </ul>
+            </div>
+            <div className="mt-5 flex flex-col gap-2.5">
+              <ChoiceCard
+                title="Oui, mon projet respecte ces deux conditions"
+                selected={conditionsAnswer === "oui"}
+                onClick={() => selectAndAdvance(setConditionsAnswer, "oui", "calculating")}
+              />
+              <ChoiceCard
+                title="Je ne sais pas encore"
+                selected={conditionsAnswer === "incertain"}
+                onClick={() => selectAndAdvance(setConditionsAnswer, "incertain", "calculating")}
+              />
+            </div>
           </div>
         )}
 
@@ -351,29 +477,47 @@ export function Simulator() {
 
         {screen === "result" && (
           <div>
-            {result.eligible ? (
+            {tier !== "non-identifie" ? (
               <>
                 <h2 className="flex items-center justify-center gap-2 text-center font-display text-2xl font-bold text-ink">
-                  Bonne nouvelle <PartyPopper className="h-6 w-6 text-green" />
+                  {tier === "compatible" ? (
+                    <>
+                      Votre projet semble potentiellement éligible <PartyPopper className="h-6 w-6 text-green" />
+                    </>
+                  ) : (
+                    "Voici votre estimation"
+                  )}
                 </h2>
-                {(effectifLabel || equipementLabel) && (
+                <div className="mt-2 flex justify-center">
+                  <span
+                    className={
+                      "rounded-full px-3 py-1 font-mono text-xs font-medium " +
+                      (tier === "compatible" ? "bg-green-soft text-green" : "bg-navy-soft text-navy")
+                    }
+                  >
+                    {tier === "compatible" ? "🟢 Critères identifiés comme compatibles" : "🟠 Éligibilité potentielle — vérification nécessaire"}
+                  </span>
+                </div>
+                {(effectifLabel || equipementGroupLabel) && (
                   <p className="mt-2 text-center text-sm text-ink-soft">
-                    {equipementLabel && `Pour votre projet de ${equipementLabel.toLowerCase()}`}
-                    {equipementLabel && effectifLabel && ", "}
+                    {equipementGroupLabel && `Pour votre projet de ${equipementGroupLabel.toLowerCase()}`}
+                    {equipementGroupLabel && effectifLabel && ", "}
                     {effectifLabel && `entreprise de ${effectifLabel.toLowerCase()}`}.
                   </p>
                 )}
 
                 <div className="mt-6 rounded-2xl border border-line bg-paper-raised p-6 shadow-card">
                   <div className="flex items-baseline justify-between">
-                    <span className="font-mono text-xs uppercase text-ink-faint">Projet estimé</span>
-                    <span className="font-mono font-semibold text-ink">{formatEUR(amountHT)}</span>
+                    <span className="font-mono text-xs uppercase text-ink-faint">Montant équipement</span>
+                    <span className="font-mono font-semibold text-ink">{formatEUR(amountHT)} HT</span>
+                  </div>
+                  <div className="mt-3 flex items-baseline justify-between">
+                    <span className="font-mono text-xs uppercase text-ink-faint">Taux applicable estimé</span>
+                    <span className="font-mono font-semibold text-ink">{Math.round(result.rate * 100)} %</span>
                   </div>
                   <div className="mt-3 flex items-baseline justify-between">
                     <span className="font-mono text-xs uppercase text-ink-faint">Aide potentielle</span>
-                    <span className="font-mono font-semibold text-green">
-                      {formatEUR(result.subsidyEstimate)}
-                    </span>
+                    <span className="font-mono font-semibold text-green">{formatEUR(result.subsidyEstimate)}</span>
                   </div>
                   <div className="mt-5 border-t border-line pt-5 text-center">
                     <div className="font-mono text-xs uppercase tracking-wide text-ink-faint">
@@ -385,38 +529,30 @@ export function Simulator() {
                   </div>
                 </div>
 
-                <p className="mt-4 text-center font-display font-semibold text-ink">
-                  Vous pourriez économiser jusqu&apos;à {formatEUR(result.subsidyEstimate)}.
-                </p>
-
-                <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-xl bg-paper-raised p-3">
-                    <div className="font-mono text-[0.65rem] uppercase text-ink-faint">Sans aide</div>
-                    <div className="mt-1 font-mono font-semibold text-ink">{formatEUR(amountHT)}</div>
-                  </div>
-                  <div className="rounded-xl bg-green-soft p-3">
-                    <div className="font-mono text-[0.65rem] uppercase text-green">Avec aide</div>
-                    <div className="mt-1 font-mono font-semibold text-green">
-                      {formatEUR(result.remainingCostHT)}
-                    </div>
-                  </div>
-                  <div className="rounded-xl bg-paper-raised p-3">
-                    <div className="font-mono text-[0.65rem] uppercase text-ink-faint">Économie</div>
-                    <div className="mt-1 font-mono font-semibold text-ink">
-                      {formatEUR(result.subsidyEstimate)}
-                    </div>
-                  </div>
-                </div>
-
                 <p className="mt-4 text-center text-xs text-ink-faint">
-                  Estimation indicative, sous réserve de votre éligibilité et de la validation du dossier.
+                  Cette estimation ne constitue pas une décision d&apos;attribution. Votre dossier doit être
+                  validé par l&apos;organisme compétent. Plateforme indépendante — nous ne sommes ni
+                  l&apos;Assurance Maladie, ni une Carsat, ni un organisme public.
                 </p>
+
+                {matchedProducts.length > 0 && (
+                  <div className="mt-6">
+                    <p className="text-center font-display text-sm font-semibold text-ink">
+                      Équipements compatibles avec votre besoin
+                    </p>
+                    <div className="mt-3 grid gap-3">
+                      {matchedProducts.map((p) => (
+                        <ProductCard key={p.slug} product={p} />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <button
                   onClick={() => push("lead-prenom")}
                   className="mt-6 w-full rounded-full bg-navy py-4 font-display font-semibold text-white hover:bg-navy-deep"
                 >
-                  Vérifier mon dossier gratuitement
+                  Préparer mon dossier
                 </button>
                 <p className="mt-2 text-center font-mono text-[0.7rem] text-ink-faint">
                   Sans engagement · Réponse personnalisée
@@ -425,6 +561,11 @@ export function Simulator() {
             ) : (
               <div className="text-center">
                 <h2 className="font-display text-2xl font-bold text-ink">Voici votre estimation</h2>
+                <div className="mt-2 flex justify-center">
+                  <span className="rounded-full bg-alert-soft px-3 py-1 font-mono text-xs font-medium text-alert">
+                    🔴 Non identifié selon les informations fournies
+                  </span>
+                </div>
                 <div className="mt-6 rounded-2xl bg-navy-soft p-6 text-navy">
                   <p className="font-display font-semibold">
                     Cette aide ne semble pas correspondre à votre situation.
@@ -456,6 +597,16 @@ export function Simulator() {
             value={prenom}
             onChange={setPrenom}
             placeholder="Prénom"
+            onSubmit={() => push("lead-nom")}
+          />
+        )}
+
+        {screen === "lead-nom" && (
+          <LeadStep
+            question="Et votre nom ?"
+            value={nom}
+            onChange={setNom}
+            placeholder="Nom"
             onSubmit={() => push("lead-entreprise")}
           />
         )}
@@ -477,17 +628,27 @@ export function Simulator() {
             onChange={setTelephone}
             placeholder="Téléphone"
             type="tel"
-            reassurance
+            onSubmit={() => push("lead-codepostal")}
+          />
+        )}
+
+        {screen === "lead-codepostal" && (
+          <LeadStep
+            question="Code postal de votre entreprise ?"
+            value={codePostal}
+            onChange={setCodePostal}
+            placeholder="Code postal"
+            type="text"
             onSubmit={() => push("lead-email")}
           />
         )}
 
         {screen === "lead-email" && (
           <LeadStep
-            question="Où pouvons-nous vous envoyer votre estimation ?"
+            question="Où pouvons-nous vous envoyer votre estimation détaillée ?"
             value={email}
             onChange={setEmail}
-            placeholder="E-mail"
+            placeholder="E-mail professionnel"
             type="email"
             reassurance
             submitLabel="Recevoir mon étude"
@@ -496,13 +657,25 @@ export function Simulator() {
         )}
 
         {screen === "thanks" && (
-          <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="flex flex-col items-center gap-4 py-6 text-center">
             <Sparkles className="h-8 w-8 text-green" />
             <h2 className="font-display text-2xl font-bold text-ink">Merci{prenom && ` ${prenom}`} !</h2>
             <p className="max-w-sm text-ink-soft">
               Votre demande a bien été transmise. Un conseiller EQUIPVENTION revient vers vous rapidement pour
-              affiner votre estimation.
+              affiner votre estimation et préparer votre dossier.
             </p>
+            <div className="mt-2 w-full rounded-2xl border border-line bg-paper-raised p-5 text-left text-sm text-ink-soft">
+              <p className="font-display font-semibold text-ink">Et pour le dépôt officiel ?</p>
+              <p className="mt-2">
+                EQUIPVENTION prépare votre dossier mais ne dépose rien à votre place. Les entreprises déposent
+                leur demande via leur compte sur{" "}
+                <a href="https://www.net-entreprises.fr/" target="_blank" rel="noreferrer" className="text-navy underline">
+                  net-entreprises.fr
+                </a>{" "}
+                (rubrique « Votre entreprise › Demander une subvention ») ; les travailleurs indépendants,
+                par e-mail auprès de leur caisse régionale.
+              </p>
+            </div>
           </div>
         )}
       </div>

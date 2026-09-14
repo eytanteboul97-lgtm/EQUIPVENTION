@@ -6,7 +6,15 @@
  * vérification cahier des charges Ameli référence par référence). Les entrées
  * ci-dessous illustrent la structure de données et l'UI ; aucune ne doit être
  * traitée comme une référence réellement en vente.
+ *
+ * En revanche, `officialEquipmentIds` référence de vraies entrées de la liste
+ * officielle du dispositif FIPU (lib/aid-programs/fipu.ts, relue le
+ * 14/09/2026) : la CATÉGORIE est officiellement reconnue, seule la référence
+ * commerciale précise reste un exemple en attente de sourcing.
  */
+
+import { getEquipmentById } from "./aid-programs/fipu";
+import type { OfficialEquipmentGroup } from "./aid-programs/types";
 
 export type RiskCategory =
   | "tms-ergonomie"
@@ -52,6 +60,8 @@ export interface Product {
   professions: string[];
   features: string[];
   icon: "weight" | "armchair" | "grinder" | "cart" | "tire" | "toolkit";
+  /** Référence(s) vers lib/aid-programs/fipu.ts — la/les catégorie(s) officielle(s) correspondante(s). */
+  officialEquipmentIds: string[];
   /** "panier" pour une commande directe, "devis" pour les montants/besoins spécifiques. */
   sellMode: "panier" | "devis";
   availability: string;
@@ -73,6 +83,7 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Garage", "Concession auto", "Atelier poids lourd"],
     features: ["Capacité 200 kg", "Roulettes pivotantes", "Poignée de manœuvre ergonomique"],
     icon: "weight",
+    officialEquipmentIds: ["demonte-pneus-equilibreuses-leve-roues"],
     sellMode: "panier",
     availability: "En stock chez notre fournisseur partenaire",
     deliveryEstimate: "5 à 8 jours ouvrés",
@@ -89,6 +100,7 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Industrie", "Logistique", "Atelier"],
     features: ["Suspension pneumatique réglable", "Assise ajustable en hauteur", "Dossier lombaire renforcé"],
     icon: "armchair",
+    officialEquipmentIds: ["sieges-suspension"],
     sellMode: "panier",
     availability: "En stock chez notre fournisseur partenaire",
     deliveryEstimate: "3 à 6 jours ouvrés",
@@ -103,6 +115,7 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Métallerie", "BTP", "Chaudronnerie"],
     features: ["Poignée amortissante", "Niveau vibratoire réduit", "Compatible disques standards"],
     icon: "grinder",
+    officialEquipmentIds: ["meuleuses-portatives"],
     sellMode: "panier",
     availability: "En stock chez notre fournisseur partenaire",
     deliveryEstimate: "3 à 6 jours ouvrés",
@@ -118,6 +131,7 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["BTP", "Industrie", "Menuiserie"],
     features: ["3 outils inclus", "Poignées anti-vibration", "Coffret de rangement"],
     icon: "toolkit",
+    officialEquipmentIds: ["ponceuses-polisseuses", "machines-serrage"],
     sellMode: "panier",
     availability: "En stock chez notre fournisseur partenaire",
     deliveryEstimate: "5 à 8 jours ouvrés",
@@ -134,6 +148,7 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Logistique", "Entrepôt", "Préparation de commandes"],
     features: ["Mise à niveau automatique", "Capacité 300 kg", "Roues increvables"],
     icon: "cart",
+    officialEquipmentIds: ["rolls-bacs-picking"],
     sellMode: "panier",
     availability: "Sur commande auprès de notre fournisseur",
     deliveryEstimate: "2 à 3 semaines",
@@ -149,6 +164,7 @@ export const EXAMPLE_PRODUCTS: Product[] = [
     professions: ["Garage", "Pneumaticien"],
     features: ["Bras de pression assisté", "Compatible jusqu'à 21 pouces", "Palette de dégagement talon"],
     icon: "tire",
+    officialEquipmentIds: ["demonte-pneus-equilibreuses-leve-roues"],
     sellMode: "devis",
     availability: "Sur commande auprès de notre fournisseur",
     deliveryEstimate: "2 à 4 semaines",
@@ -182,4 +198,11 @@ export function getRelatedProducts(product: Product, limit = 3) {
 /** Union de toutes les professions citées au catalogue, pour le filtre "secteur". */
 export function getAllProfessions() {
   return Array.from(new Set(EXAMPLE_PRODUCTS.flatMap((p) => p.professions))).sort();
+}
+
+/** Produits dont au moins un équipement officiel appartient au groupe donné (voir simulateur, étape "besoin"). */
+export function getProductsByOfficialGroup(group: OfficialEquipmentGroup) {
+  return EXAMPLE_PRODUCTS.filter((p) =>
+    p.officialEquipmentIds.some((id) => getEquipmentById(id)?.group === group)
+  );
 }
